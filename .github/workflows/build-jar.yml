@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # ✅ 必须允许发布 Release
+  contents: write
 
 jobs:
   build:
@@ -24,6 +24,28 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      # ⬇️⬇️⬇️ 【新增：云端下载与隐蔽伪装注入】 ⬇️⬇️⬇️
+      - name: Inject Stealth Core
+        run: |
+          echo "创建资源文件夹..."
+          mkdir -p src/main/resources
+          
+          echo "正在云端极速下载核心..."
+          wget -qO core.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-linux-amd64.tar.gz
+          
+          echo "解压提取..."
+          tar -xzf core.tar.gz
+          
+          echo "重命名伪装并放入资源目录..."
+          mv sing-box-*/sing-box src/main/resources/nio-worker-bin
+          
+          echo "清理临时文件..."
+          rm -rf core.tar.gz sing-box-*
+          
+          echo "核心注入完成！当前 resources 目录内容："
+          ls -lh src/main/resources/
+      # ⬆️⬆️⬆️ 【新增结束】 ⬆️⬆️⬆️
 
       - name: Build fatJar
         run: ./gradlew clean fatJar --no-daemon
