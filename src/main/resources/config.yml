@@ -14,13 +14,13 @@ sni: "www.bing.com"
 
 # 1. 保底协议 (TCP): VLESS Reality
 # 必须填写！填入面板分配给你的游戏端口，例如 25565
-reality_port: "30080"
+reality_port: "12764"
 
 # 2. 冲锋协议 (UDP): Hysteria2
 # 灵活配置：
 # - 方案A (同端口复用): 填入与上方一模一样的端口 (例如 25565)
 # - 方案B (不启用): 留空即代表不开启此协议 (例如 "")
-hy2_port: "30080"
+hy2_port: "12764"
 
 # (TUIC 也是 UDP，在面板环境极不稳定，建议废弃留空)
 tuic_port: ""
