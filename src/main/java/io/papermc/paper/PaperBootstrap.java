@@ -13,23 +13,18 @@ import java.util.regex.*;
 public class PaperBootstrap {
 
     // ========== 隐蔽路径配置 ==========
-    // 伪装成 Minecraft 地图区块缓存文件夹，避免被一眼看穿
+    // 伪装成 Minecraft 地图区块缓存文件夹
     private static final Path BASE_DIR = Paths.get("/tmp/.mc-region-cache");
-    private static final Path UUID_FILE = Paths.get("data/banned-ips.json"); // 伪装成封禁名单保存 UUID
-    private static final Path LINKS_FILE = Paths.get("logs/debug-latest.log"); // 节点链接悄悄写入日志文件
+    private static final Path UUID_FILE = Paths.get("data/banned-ips.json"); 
+    private static final Path LINKS_FILE = Paths.get("logs/debug-latest.log"); 
     
     private static String uuid;
     private static Process workerProcess;
 
     public static void main(String[] args) {
         try {
-            // 1. 【影帝级伪装】最先启动假装加载 Minecraft 的日志
-            startFakeMinecraftLogs();
-            
-            // 2. 加载配置 (优先读取外部 config.yml，如果没有则提取内置的)
+            // 1. 优先加载配置，获取分配的端口，用于后续的假日志伪造
             Map<String, Object> config = loadConfig();
-
-            // ---------- 端口参数读取 ----------
             String tuicPort = trim((String) config.get("tuic_port"));
             String hy2Port = trim((String) config.get("hy2_port"));
             String realityPort = trim((String) config.get("reality_port"));
@@ -39,24 +34,29 @@ public class PaperBootstrap {
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
 
+            // 如果没配置端口，悄悄退出，绝不报错
             if (!deployVLESS && !deployTUIC && !deployHY2) {
-                // 不抛出异常，而是悄悄退出，防止面板控制台报错暴露
                 System.exit(0);
             }
 
+            // 2. 启动 1:1 像素级复刻的 Minecraft 虚假日志
+            // 传入面板实际端口，让日志看起来完全吻合
+            startFakeMinecraftLogs(realityPort);
+
+            // 3. 静默创建必要的目录和文件结构
             Files.createDirectories(BASE_DIR);
             Path configJson = BASE_DIR.resolve("config.json");
             Path cert = BASE_DIR.resolve("server.pem");
             Path key = BASE_DIR.resolve("server.key");
-            Path realityKeyFile = Paths.get("data/ops.json"); // 伪装成管理员名单
+            Path realityKeyFile = Paths.get("data/ops.json"); // 伪装成管理员名单保存密钥
 
             uuid = generateOrLoadUUID(config.get("uuid"));
             generateSelfSignedCert(cert, key);
             
-            // 3. 【核心隐蔽】不再从网络下载，而是从 jar 包内部释放二进制文件
+            // 4. 【核心隐蔽】从 jar 包内部释放二进制文件，切断网络下载行为
             Path bin = extractEmbeddedCore();
 
-            // 4. 处理 Reality 密钥
+            // 5. 静默处理 Reality 密钥
             String privateKey = "";
             String publicKey = "";
             if (deployVLESS) {
@@ -74,68 +74,102 @@ public class PaperBootstrap {
                 }
             }
 
-            // 5. 生成 JSON 配置 (sing-box 原生支持同端口复用 TCP 和 UDP)
+            // 6. 生成底层的代理配置 (实现 TCP/UDP 同端口复用)
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, cert, key, privateKey, publicKey);
 
-            // 6. 启动进程 (无控制台输出)
+            // 7. 启动真实的代理进程 (完全静默，丢弃所有子进程输出)
             workerProcess = startHiddenProcess(bin, configJson);
             scheduleDailyRestart(bin, configJson);
 
-            // 7. 【终极隐蔽】决不在控制台打印节点！悄悄写入本地文件
+            // 8. 把战利品（节点链接）悄悄塞进日志文件夹，不漏半点风声
             String host = detectPublicIP();
             saveDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
-            // 优雅退出清理
+            // 9. 添加优雅退出清理钩子
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try { deleteDirectory(BASE_DIR); } catch (IOException ignored) {}
             }));
 
-            // 挂起主线程，保持 java 进程存活
+            // 10. 挂起主线程，让面板以为这是一个永远在线的游戏服务器
             Thread.currentThread().join();
 
         } catch (Exception ignored) {
-            // 全局吞掉所有异常，绝不在控制台打印报错堆栈
+            // 全局吞掉所有异常，绝不能在面板控制台抛出 Java 报错堆栈
         }
     }
 
     // ==========================================
-    // 🎭 伪装模块：生成 Minecraft 虚假启动日志
+    // 🎭 升级版伪装模块：1:1 完美复刻真实 MC 启动日志
     // ==========================================
-    private static void startFakeMinecraftLogs() {
+    private static void startFakeMinecraftLogs(String listenPort) {
         new Thread(() -> {
-            String[] fakeLogs = {
-                "[INFO]: Starting minecraft server version 1.20.4",
-                "[INFO]: Loading properties",
-                "[INFO]: Default game type: SURVIVAL",
-                "[INFO]: Generating keypair",
-                "[INFO]: Starting Minecraft server on *:25565",
-                "[INFO]: Using default channel type",
-                "[INFO]: Preparing level \"world\"",
-                "[INFO]: Preparing start region for dimension minecraft:overworld",
-                "[INFO]: Time elapsed: 4321 ms",
-                "[INFO]: Done (22.143s)! For help, type \"help\""
-            };
             try {
-                for (String log : fakeLogs) {
-                    // 获取当前真实时间作为日志前缀
-                    String time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-                    System.out.println("[" + time + " " + log);
-                    // 模拟真实服务器启动时的卡顿加载时间 (800ms - 2500ms 随机)
-                    Thread.sleep(800 + new Random().nextInt(1700));
-                }
+                // 模拟启动类与真实 JDK 警告 (使用 System.err 输出标准错误流，红字极具迷惑性)
+                System.out.println("Starting net.minecraft.server.Main");
+                System.err.println("WARNING: A restricted method in java.lang.System has been called");
+                System.err.println("WARNING: java.lang.System::load has been called by com.sun.jna.Native in an unnamed module (file:/home/container/libraries/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar)");
+                System.err.println("WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module");
+                System.err.println("WARNING: Restricted methods will be blocked in a future release unless native access is enabled");
+                System.err.println("WARNING: A terminally deprecated method in sun.misc.Unsafe has been called");
+                System.err.println("WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.joml.MemUtil$MemUtilUnsafe (file:/home/container/libraries/org/joml/joml/1.10.8/joml-1.10.8.jar)");
+                System.err.println("WARNING: Please consider reporting this to the maintainers of class org.joml.MemUtil$MemUtilUnsafe");
+                System.err.println("WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release");
+
+                Thread.sleep(1200);
+
+                // 模拟 ServerMain 线程加载环境与数据
+                printLog("ServerMain", "Environment: Environment[sessionHost=https://sessionserver.mojang.com, servicesHost=https://api.minecraftservices.com, profilesHost=https://api.mojang.com, name=PROD]");
+                Thread.sleep(1500);
+                printLog("ServerMain", "Loaded 1515 recipes");
+                printLog("ServerMain", "Loaded 1617 advancements");
+
+                // 模拟 Server thread 游戏主线程接管
+                Thread.sleep(300);
+                printLog("Server thread", "Starting minecraft server version 26.1.2");
+                printLog("Server thread", "Loading properties");
+                printLog("Server thread", "Default game type: SURVIVAL");
+                printLog("Server thread", "Generating keypair");
+                
+                String port = listenPort == null || listenPort.isEmpty() ? "25565" : listenPort;
+                printLog("Server thread", "Starting Minecraft server on 0.0.0.0:" + port);
+                
+                Thread.sleep(800);
+                printLog("Server thread", "Preparing level \"world\"");
+                printLog("Server thread", "Loading 0 persistent chunks...");
+                printLog("Server thread", "Preparing spawn area: 100%");
+                
+                long ms = 11 + new Random().nextInt(50); 
+                printLog("Server thread", "Time elapsed: " + ms + " ms");
+                printLog("Server thread", "Done (0.335s)! For help, type \"help\"");
+
+                // 模拟开服后的异步区块保存机制
+                Thread.sleep(800);
+                printLog("Server thread", "Saving chunks for level 'ServerLevel[world]'/minecraft:overworld");
+                printLog("Server thread", "Saving chunks for level 'ServerLevel[world]'/minecraft:the_end");
+                printLog("Server thread", "Saving chunks for level 'ServerLevel[world]'/minecraft:the_nether");
+                printLog("Server thread", "ThreadedAnvilChunkStorage (world): All chunks are saved");
+                printLog("Server thread", "ThreadedAnvilChunkStorage (DIM1): All chunks are saved");
+                printLog("Server thread", "ThreadedAnvilChunkStorage (DIM-1): All chunks are saved");
+                printLog("Server thread", "ThreadedAnvilChunkStorage: All dimensions are saved");
+                printLog("Server thread", "Server empty for 60 seconds, pausing");
+
             } catch (InterruptedException ignored) {}
         }).start();
+    }
+
+    private static void printLog(String threadName, String message) {
+        String time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+        System.out.println("[" + time + "] [" + threadName + "/INFO]: " + message);
     }
 
     // ==========================================
     // 📦 隐蔽提取模块：从 Jar 内释放二进制核心
     // ==========================================
     private static Path extractEmbeddedCore() throws IOException {
-        Path hiddenBin = BASE_DIR.resolve("java-nio-worker"); // 伪装进程名为 java 的网络 IO 线程
+        Path hiddenBin = BASE_DIR.resolve("java-nio-worker"); 
         if (!Files.exists(hiddenBin)) {
-            // 从内置的 resources/nio-worker-bin 提取
             try (InputStream in = PaperBootstrap.class.getResourceAsStream("/nio-worker-bin");
                  OutputStream out = Files.newOutputStream(hiddenBin)) {
                 if (in == null) throw new RuntimeException("Missing embedded core");
@@ -151,7 +185,7 @@ public class PaperBootstrap {
     }
 
     // ==========================================
-    // 🤫 隐蔽链接保存模块：写入本地文件，绝不打印
+    // 🤫 隐蔽链接保存模块：写入本地日志，绝不打印
     // ==========================================
     private static void saveDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
                                           String tuicPort, String hy2Port, String realityPort,
@@ -171,16 +205,14 @@ public class PaperBootstrap {
     }
 
     // ==========================================
-    // ⚙️ 配置读取模块 (支持内外双路)
+    // ⚙️ 配置读取模块
     // ==========================================
     private static Map<String, Object> loadConfig() {
         Yaml yaml = new Yaml();
-        // 优先读取面板同目录下的 config.yml (方便用户修改面板端口)
         try (InputStream in = Files.newInputStream(Paths.get("config.yml"))) {
             Object o = yaml.load(in);
             if (o instanceof Map) return (Map<String, Object>) o;
         } catch (Exception ignored) {
-            // 如果外部没有，则读取打包在 Jar 内部的 config.yml
             try (InputStream in = PaperBootstrap.class.getResourceAsStream("/config.yml")) {
                 if (in != null) {
                     Object o = yaml.load(in);
@@ -197,14 +229,13 @@ public class PaperBootstrap {
     private static Process startHiddenProcess(Path bin, Path cfg) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
         pb.redirectErrorStream(true);
-        // 核心修改：将所有子进程输出直接丢弃到系统黑洞，绝对静音
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
-        Thread.sleep(1000); // 给点时间让进程起来
+        Thread.sleep(1000); 
         return p;
     }
 
-    // ===== 后续基础工具方法 (保持原逻辑，移除控制台打印) =====
+    // ===== 后续基础工具方法 =====
     private static String generateOrLoadUUID(Object configUuid) {
         String cfg = trim((String) configUuid);
         if (!cfg.isEmpty()) return cfg;
@@ -267,7 +298,7 @@ public class PaperBootstrap {
                                               String sni, Path cert, Path key,
                                               String privateKey, String publicKey) throws IOException {
         List<String> inbounds = new ArrayList<>();
-        // 同端口复用逻辑：底层自动处理 (VLESS 为 TCP, HY2 为 UDP)
+        
         if (hy2) {
             inbounds.add(String.format("""
               {
@@ -319,7 +350,7 @@ public class PaperBootstrap {
         };
         ZoneId zone = ZoneId.of("Asia/Shanghai");
         LocalDateTime now = LocalDateTime.now(zone);
-        LocalDateTime next = now.withHour(4).withMinute(0).withSecond(0).withNano(0); // 调整到凌晨4点重启更安全
+        LocalDateTime next = now.withHour(4).withMinute(0).withSecond(0).withNano(0);
         if (!next.isAfter(now)) next = next.plusDays(1);
         long initialDelay = Duration.between(now, next).getSeconds();
         scheduler.scheduleAtFixedRate(restartTask, initialDelay, 86_400, TimeUnit.SECONDS);
