@@ -2,10 +2,10 @@
 sni: "www.bing.com"
 
 
-reality_port: "12764"
+reality_port: "24713"
 
 
-hy2_port: "12764"
+hy2_port: "25269"
 
 
 tuic_port: ""
