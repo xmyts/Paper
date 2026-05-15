@@ -223,15 +223,20 @@ public class PaperBootstrap {
         return new HashMap<>();
     }
 
-    // ==========================================
-    // 🚀 核心进程启动模块 (全静默)
+// ==========================================
+    // 🚀 核心进程启动模块 (调试模式：输出报错到文件)
     // ==========================================
     private static Process startHiddenProcess(Path bin, Path cfg) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
+        
+        // 【修改点】：不再丢弃输出，而是写入到 logs/singbox-error.log
+        Path errorLog = Paths.get("logs/singbox-error.log");
+        Files.createDirectories(errorLog.getParent());
         pb.redirectErrorStream(true);
-        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectOutput(errorLog.toFile()); 
+        
         Process p = pb.start();
-        Thread.sleep(1000); 
+        Thread.sleep(1500); 
         return p;
     }
 
